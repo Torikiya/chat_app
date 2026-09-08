@@ -31,7 +31,13 @@ export default function UserLogin({ onLoginSuccess }) {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const responseText = await res.text();
+      let data = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่ใช่ JSON (HTTP ${res.status})`);
+      }
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาดในการเชื่อมต่อ');
 
       // บันทึก Session ลง localStorage เพื่อให้อยู่ในระบบถาวร (Auto Login)
@@ -60,7 +66,13 @@ export default function UserLogin({ onLoginSuccess }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: credentialResponse.credential }),
       });
-      const data = await res.json();
+      const responseText = await res.text();
+      let data = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่ใช่ JSON (HTTP ${res.status})`);
+      }
       if (!res.ok) throw new Error(data.error || 'ไม่สามารถเข้าสู่ระบบด้วย Google ได้');
 
       localStorage.setItem('chat_user', JSON.stringify(data.user));

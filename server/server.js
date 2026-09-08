@@ -14,17 +14,17 @@ const { OAuth2Client } = require("google-auth-library");
 const app = express();
 const server = http.createServer(app);
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
-
-app.use(cors({
+const corsOptions = {
   origin: CLIENT_URL,
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-}));
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 const io = new Server(server, {
-  cors: {
-    origin: CLIENT_URL,
-    methods: ["GET", "POST", "PATCH", "DELETE"],
-  },
+  cors: corsOptions,
 });
 
 app.use(express.json({ limit: "5mb" }));
@@ -32,6 +32,10 @@ app.use(express.json({ limit: "5mb" }));
 const uploadDirectory = path.join(__dirname, "uploads");
 fs.mkdirSync(uploadDirectory, { recursive: true });
 app.use("/uploads", express.static(uploadDirectory));
+
+app.get("/", (_req, res) => {
+  res.json({ ok: true, service: "chat-server" });
+});
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -94,6 +98,10 @@ const db = mysql.createPool({
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASSWORD || "",
   database: process.env.DB_NAME || "chat_app",
+  ssl:
+    process.env.DB_SSL === "true"
+      ? { rejectUnauthorized: false }
+      : undefined,
 });
 
 async function ensureProfileColumn() {
@@ -191,7 +199,12 @@ app.post("/api/auth/login", async (req, res) => {
       token,
     });
   } catch (err) {
-    console.error("login error:", err);
+    console.error("login error:", {
+      code: err.code,
+      errno: err.errno,
+      sqlState: err.sqlState,
+      message: err.message,
+    });
     res.status(500).json({ error: "เกิดข้อผิดพลาดในการเข้าสู่ระบบ" });
   }
 });
@@ -300,8 +313,15 @@ app.post("/api/auth/google", async (req, res) => {
       token: appToken,
     });
   } catch (error) {
-    console.error("Google account persistence error:", error);
-    res.status(500).json({ error: "Google ผ่านการยืนยันแล้ว แต่บันทึกบัญชีในระบบไม่ได้" });
+    console.error("Google account persistence error:", {
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      message: error.message,
+    });
+    res.status(500).json({
+      error: "Google ผ่านการยืนยันแล้ว แต่บันทึกบัญชีในระบบไม่ได้",
+    });
   }
 });
 
@@ -559,7 +579,7 @@ io.on("connection", (socket) => {
       fileUrl,
       fileName,
       mimeType,
-    }) => {
+    }, callback) => {
       try {
         const numericRoomId = Number(roomId);
         const rid = String(numericRoomId);
@@ -599,8 +619,15 @@ io.on("connection", (socket) => {
           result.insertId,
           socket.id,
         );
+        callback?.({ success: true, messageId: result.insertId });
       } catch (err) {
-        console.error("send_message error:", err);
+        console.error("send_message error:", {
+          code: err.code,
+          errno: err.errno,
+          sqlState: err.sqlState,
+          message: err.message,
+        });
+        callback?.({ success: false, message: err.message });
       }
     },
   );

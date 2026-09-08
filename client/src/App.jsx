@@ -244,6 +244,11 @@ export default function App() {
       setMessages(msgs);
     });
 
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      showNotice('เชื่อมต่อระบบแชตไม่ได้ กรุณาลองรีเฟรชหน้าเว็บ');
+    });
+
     socket.on('receive_message', (msg) => {
       setMessages((prev) => [...prev, msg]);
     });
@@ -314,6 +319,7 @@ export default function App() {
 
     return () => {
       socket.off('load_messages');
+      socket.off('connect_error');
       socket.off('receive_message');
       socket.off('room_activity');
       socket.off('message_deleted');
@@ -362,6 +368,8 @@ export default function App() {
           userId: user.id,
           message: text,
           messageType: 'text',
+        }, (res) => {
+          if (!res?.success) showNotice(res?.message || 'ส่งข้อความไม่สำเร็จ');
         })}
         onDeleteMessage={(messageId) => {
           if (!messageId) {
