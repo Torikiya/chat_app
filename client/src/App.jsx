@@ -9,7 +9,11 @@ import ProfileModal from './components/ProfileModal';
 import { API_URL } from './config';
 import './App.css';
 
-const socket = io(API_URL);
+const socket = io(API_URL, {
+  transports: ['polling'],
+  reconnection: true,
+  reconnectionAttempts: 5,
+});
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -27,6 +31,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const currentRoomRef = React.useRef(null);
   const userRef = React.useRef(null);
+  const socketErrorShownRef = React.useRef(false);
   const restoredRoomKeyRef = React.useRef(null);
   const skipUnreadPersistRef = React.useRef(false);
 
@@ -244,9 +249,16 @@ export default function App() {
       setMessages(msgs);
     });
 
+    socket.on('connect', () => {
+      socketErrorShownRef.current = false;
+    });
+
     socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
-      showNotice('เชื่อมต่อระบบแชตไม่ได้ กรุณาลองรีเฟรชหน้าเว็บ');
+      if (!socketErrorShownRef.current) {
+        socketErrorShownRef.current = true;
+        showNotice('เชื่อมต่อระบบแชตไม่ได้ กรุณาลองรีเฟรชหน้าเว็บ');
+      }
     });
 
     socket.on('receive_message', (msg) => {
@@ -319,6 +331,7 @@ export default function App() {
 
     return () => {
       socket.off('load_messages');
+      socket.off('connect');
       socket.off('connect_error');
       socket.off('receive_message');
       socket.off('room_activity');
