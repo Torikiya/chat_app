@@ -2,7 +2,6 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
-require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -11,24 +10,67 @@ const multer = require("multer");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
+const dotenv = require("dotenv");
+
+// โหลด Environment Variables
+dotenv.config();
+
+// นำเข้าค่าจาก loadenv (ถ้ามี) หรือดึงจาก process.env เป็นหลัก
+let envVars = {};
+try {
+  envVars = require("./loadenv");
+} catch (e) {
+  // หากไม่มีไฟล์ loadenv ให้ใช้ process.env โดยตรง
+}
+
+const PORT = envVars.PORT || process.env.PORT || 4000;
+const CLIENT_URL =
+  envVars.CLIENT_URL || process.env.CLIENT_URL || "http://localhost:5173";
+const DB_HOST = envVars.DB_HOST || process.env.DB_HOST || "localhost";
+const DB_PORT = envVars.DB_PORT || process.env.DB_PORT || 3306;
+const DB_USER = envVars.DB_USER || process.env.DB_USER || "root";
+const DB_PASSWORD =
+  envVars.DB_PASSWORD !== undefined
+    ? envVars.DB_PASSWORD
+    : process.env.DB_PASSWORD || "";
+const DB_NAME = envVars.DB_NAME || process.env.DB_NAME || "chat_app";
+const JWT_SECRET =
+  envVars.JWT_SECRET || process.env.JWT_SECRET || "default_jwt_secret_key";
+const GOOGLE_CLIENT_ID =
+  envVars.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "";
+
 const app = express();
 const server = http.createServer(app);
-const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
+
+// ตั้งค่า CORS Middleware
 const corsOptions = {
   origin: CLIENT_URL,
+  credentials: true,
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-app.use(cors(corsOptions));
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    credentials: true,
+  }),
+);
 app.options("*", cors(corsOptions));
-
-const io = new Server(server, {
-  cors: corsOptions,
-});
-
 app.use(express.json({ limit: "5mb" }));
 
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// ตั้งค่า Socket.io
+const io = new Server(server, {
+  cors: {
+    origin: CLIENT_URL,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
+
+// ตั้งค่าโฟลเดอร์อัปโหลดไฟล์
 const uploadDirectory = path.join(__dirname, "uploads");
 fs.mkdirSync(uploadDirectory, { recursive: true });
 app.use("/uploads", express.static(uploadDirectory));
@@ -37,6 +79,7 @@ app.get("/", (_req, res) => {
   res.json({ ok: true, service: "chat-server" });
 });
 
+// ตั้งค่า Multer สำหรับจัดการไฟล์อัปโหลด
 const upload = multer({
   storage: multer.diskStorage({
     destination: uploadDirectory,
@@ -58,10 +101,6 @@ const upload = multer({
   },
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || "local-development-secret";
-const GOOGLE_CLIENT_ID =
-  process.env.GOOGLE_CLIENT_ID ||
-  "151620088124-43c1jun4qucrru3is8246pjrip0mtnqc.apps.googleusercontent.com";
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 function generateRandomUserId() {
@@ -92,23 +131,44 @@ async function cacheGoogleAvatar(pictureUrl) {
   }
 }
 
+// เชื่อมต่อฐานข้อมูล MySQL
 const db = mysql.createPool({
-  host: process.env.DB_HOST || "localhost",
-  port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
-  database: process.env.DB_NAME || "chat_app",
-  ssl:
-    process.env.DB_SSL === "true"
-      ? { rejectUnauthorized: false }
-      : undefined,
+  host: DB_HOST,
+  port: DB_PORT,
+  user: DB_USER,
+  password: DB_PASSWORD,
+  database: DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
 });
 
+(async () => {
+  try {
+    const connection = await db.getConnection();
+    console.log("Connected to MySQL Database successfully");
+    connection.release();
+  } catch (err) {
+    console.error("Database connection failed:", err.message);
+    console.error("กรุณาตรวจสอบ DB_USER และ DB_PASSWORD ในไฟล์ .env");
+  }
+})();
+
+// ตรวจสอบและเตรียมโครงสร้างตารางผู้ใช้
 async function ensureProfileColumn() {
   try {
-    await db.query("ALTER TABLE users ADD COLUMN avatar_url LONGTEXT NULL");
-  } catch (error) {
-    if (error.code !== "ER_DUP_FIELDNAME") throw error;
+    const [columns] = await db.query(
+      `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'avatar_url'`,
+    );
+    if (columns.length === 0) {
+      await db.query(
+        "ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT NULL",
+      );
+      console.log("เพิ่มคอลัมน์ avatar_url ในตาราง users สำเร็จ");
+    }
+  } catch (err) {
+    console.warn("ตรวจสอบโครงสร้างตาราง users:", err.message);
   }
 }
 
@@ -122,6 +182,8 @@ async function getMessageIdColumn() {
   );
   return columns[0]?.COLUMN_NAME || "message_id";
 }
+
+// --- REST API ENDPOINTS ---
 
 app.post("/api/auth/register", async (req, res) => {
   const { username, email, password } = req.body;
@@ -199,12 +261,7 @@ app.post("/api/auth/login", async (req, res) => {
       token,
     });
   } catch (err) {
-    console.error("login error:", {
-      code: err.code,
-      errno: err.errno,
-      sqlState: err.sqlState,
-      message: err.message,
-    });
+    console.error("login error:", err.message);
     res.status(500).json({ error: "เกิดข้อผิดพลาดในการเข้าสู่ระบบ" });
   }
 });
@@ -255,9 +312,13 @@ app.post("/api/auth/social", async (req, res) => {
 });
 
 app.post("/api/auth/google", async (req, res) => {
-  const { token } = req.body;
+  // รับค่าได้ทั้ง token หรือ credential ที่ส่งมาจาก Frontend
+  const token = req.body.token || req.body.credential;
+
   if (!token || !GOOGLE_CLIENT_ID) {
-    return res.status(400).json({ error: "ระบบ Google Login ยังไม่ได้ตั้งค่า" });
+    return res
+      .status(400)
+      .json({ error: "ระบบ Google Login ยังไม่ได้ตั้งค่า" });
   }
 
   let payload;
@@ -269,16 +330,21 @@ app.post("/api/auth/google", async (req, res) => {
     payload = ticket.getPayload();
   } catch (error) {
     console.error("Google token verification error:", error.message);
-    return res.status(401).json({ error: "Google token ไม่ถูกต้องหรือ Client ID ไม่ตรงกัน" });
+    return res
+      .status(401)
+      .json({ error: "Google token ไม่ถูกต้องหรือ Client ID ไม่ตรงกัน" });
   }
 
   const email = payload?.email;
-  if (!email) return res.status(400).json({ error: "Google ไม่ส่งอีเมลของผู้ใช้มา" });
+  if (!email)
+    return res.status(400).json({ error: "Google ไม่ส่งอีเมลของผู้ใช้มา" });
   const username = payload.name || email.split("@")[0];
 
   try {
     const avatarUrl = await cacheGoogleAvatar(payload.picture);
-    const [existing] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
+    const [existing] = await db.query("SELECT * FROM users WHERE email = ?", [
+      email,
+    ]);
     let user = existing[0];
 
     if (!user) {
@@ -287,12 +353,18 @@ app.post("/api/auth/google", async (req, res) => {
         "INSERT INTO users (user_id, username, email, provider, avatar_url) VALUES (?, ?, ?, 'google', ?)",
         [userId, username, email, avatarUrl],
       );
-      user = { user_id: userId, username, email, provider: "google", avatar_url: avatarUrl };
+      user = {
+        user_id: userId,
+        username,
+        email,
+        provider: "google",
+        avatar_url: avatarUrl,
+      };
     } else if (avatarUrl && user.avatar_url !== avatarUrl) {
-      await db.query(
-        "UPDATE users SET avatar_url = ? WHERE user_id = ?",
-        [avatarUrl, user.user_id],
-      );
+      await db.query("UPDATE users SET avatar_url = ? WHERE user_id = ?", [
+        avatarUrl,
+        user.user_id,
+      ]);
       user.avatar_url = avatarUrl;
     }
 
@@ -301,6 +373,7 @@ app.post("/api/auth/google", async (req, res) => {
       JWT_SECRET,
       { expiresIn: "30d" },
     );
+
     res.json({
       success: true,
       user: {
@@ -313,12 +386,7 @@ app.post("/api/auth/google", async (req, res) => {
       token: appToken,
     });
   } catch (error) {
-    console.error("Google account persistence error:", {
-      code: error.code,
-      errno: error.errno,
-      sqlState: error.sqlState,
-      message: error.message,
-    });
+    console.error("Google account persistence error:", error.message);
     res.status(500).json({
       error: "Google ผ่านการยืนยันแล้ว แต่บันทึกบัญชีในระบบไม่ได้",
     });
@@ -435,6 +503,8 @@ app.get("/api/users/:userId/rooms", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// --- SOCKET.IO EVENTS ---
 
 const connectedSockets = {};
 
@@ -571,15 +641,10 @@ io.on("connection", (socket) => {
 
   socket.on(
     "send_message",
-    async ({
-      roomId,
-      userId,
-      message,
-      messageType,
-      fileUrl,
-      fileName,
-      mimeType,
-    }, callback) => {
+    async (
+      { roomId, userId, message, messageType, fileUrl, fileName, mimeType },
+      callback,
+    ) => {
       try {
         const numericRoomId = Number(roomId);
         const rid = String(numericRoomId);
@@ -621,12 +686,7 @@ io.on("connection", (socket) => {
         );
         callback?.({ success: true, messageId: result.insertId });
       } catch (err) {
-        console.error("send_message error:", {
-          code: err.code,
-          errno: err.errno,
-          sqlState: err.sqlState,
-          message: err.message,
-        });
+        console.error("send_message error:", err.message);
         callback?.({ success: false, message: err.message });
       }
     },
@@ -908,7 +968,11 @@ io.on("connection", (socket) => {
       }));
 
       io.to(rid).emit("update_members", {
-        owner: { userId: ownerId, username: ownerName, avatarUrl: ownerAvatarUrl },
+        owner: {
+          userId: ownerId,
+          username: ownerName,
+          avatarUrl: ownerAvatarUrl,
+        },
         onlineMembers: uniqueUsers,
         allMembers: allMembers,
       });
@@ -918,7 +982,7 @@ io.on("connection", (socket) => {
   }
 });
 
-const PORT = process.env.PORT || 4000;
+// เริ่มต้นเปิดใช้งาน Server
 ensureProfileColumn()
   .then(() =>
     server.listen(PORT, () => console.log(`Server running on port ${PORT}`)),

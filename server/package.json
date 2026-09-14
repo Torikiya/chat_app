@@ -4,17 +4,17 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "dev": "node server.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "express": "^4.19.2",
+    "express": "^4.22.2",
     "google-auth-library": "^9.15.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
-    "mysql2": "^3.9.7",
-    "socket.io": "^4.7.5"
+    "mysql2": "^3.24.4",
+    "socket.io": "^4.8.3"
   }
 }
