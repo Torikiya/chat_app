@@ -70,10 +70,14 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 // ตั้งค่า Socket.io
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: [
+      "http://localhost:5173",
+      "https://chat-app1.jhimejhimesyl.workers.dev",
+    ],
     methods: ["GET", "POST"],
     credentials: true,
   },
+  transports: ["websocket", "polling"],
 });
 
 // ตั้งค่าโฟลเดอร์อัปโหลดไฟล์

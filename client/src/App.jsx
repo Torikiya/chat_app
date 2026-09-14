@@ -8,12 +8,13 @@ import RoomModal from './components/roomModal';
 import ProfileModal from './components/ProfileModal';
 import { API_URL } from './config';
 import './App.css';
+import { io } from "socket.io-client";
 
-const socket = io(API_URL, {
-  transports: ['websocket', 'polling'],
-  reconnection: true,
-  reconnectionAttempts: 5,
+const socket = io("https://chat-app-hui1.onrender.com", {
+  transports: ["websocket", "polling"],
+  withCredentials: true
 });
+
 
 export default function App() {
   const [user, setUser] = useState(null);
