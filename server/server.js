@@ -52,7 +52,7 @@ const corsOptions = {
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: [process.env.CLIENT_URL || "http://localhost:5173", 'https://my-chat-app-907.vercel.app'],
     credentials: true,
   }),
 );
