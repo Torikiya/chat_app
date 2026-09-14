@@ -14,8 +14,6 @@ const dotenv = require("dotenv");
 
 // โหลด Environment Variables
 dotenv.config();
-
-// นำเข้าค่าจาก loadenv (ถ้ามี) หรือดึงจาก process.env เป็นหลัก
 let envVars = {};
 try {
   envVars = require("./loadenv");
