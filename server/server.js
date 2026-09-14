@@ -42,20 +42,28 @@ const GOOGLE_CLIENT_ID =
 const app = express();
 const server = http.createServer(app);
 
-// ตั้งค่า CORS Middleware
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://my-chat-app-907.vercel.app",
+  process.env.CLIENT_URL,
+].filter(Boolean);
+
 const corsOptions = {
-  origin: CLIENT_URL,
+  origin: function (origin, callback) {
+    // ยินยอมถ้าไม่มี origin (เช่น Postman/Mobile) หรือ origin ตรงกับรายการที่อนุญาต
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
   credentials: true,
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-app.use(
-  cors({
-    origin: [process.env.CLIENT_URL || "http://localhost:5173", 'https://my-chat-app-907.vercel.app'],
-    credentials: true,
-  }),
-);
+app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "5mb" }));
 
@@ -64,7 +72,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 // ตั้งค่า Socket.io
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_URL,
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true,
   },
