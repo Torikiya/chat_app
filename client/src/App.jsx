@@ -10,7 +10,7 @@ import { API_URL } from './config';
 import './App.css';
 
 const socket = io(API_URL, {
-  transports: ['polling'],
+  transports: ['websocket', 'polling'],
   reconnection: true,
   reconnectionAttempts: 5,
 });
